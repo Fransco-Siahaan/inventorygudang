@@ -41,7 +41,8 @@ function terbilang($x) {
 
 // Ambil parameter pencarian dari POST atau SESSION
 $search_term = isset($_POST['search_term']) ? $_POST['search_term'] : 
-              (isset($_SESSION['saved_search']) ? $_SESSION['saved_search'] : '');
+              '';
+$search_term = mysqli_real_escape_string($conn, $search_term);
 
 // Buat query dengan filter pencarian jika ada
 $whereClause = '';

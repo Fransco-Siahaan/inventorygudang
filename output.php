@@ -1,251 +1,228 @@
-<!DOCTYPE html>
-<html lang="en">
+<?php
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Form Barang Keluar</title>
-    <link rel="stylesheet" href="output.css">
-    <!-- Tambahkan Font Awesome untuk ikon -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-</head>
+$barang = db_fetch_all(
+    $conn,
+    'SELECT nomor, kdbarang, namabarang, jumlah, satuan, harga FROM input ORDER BY kdbarang ASC'
+);
 
-<body>
+render_head('Pengeluaran Barang', 'output', 'Catat barang yang keluar dari gudang');
+?>
 
-    <header>
-        <h1 class="hero">Data Pengeluaran Barang - Torsada</h1>
-        <nav class="hamburger" id="klik">
-            <div class="line"></div>
-            <div class="line"></div>
-            <div class="line"></div>
-        </nav>
-        <main class="link">
-            <ul>
-                <li><a href="masuk.php">Input Data Barang</a></li>
-                <li><a href="nambahbarang.php">Penambahan Barang</a></li>
-                <li><a href="informasimasukbarang.php">Riwayat Masuk Barang</a></li>
-                <li><a href="inbarang.php">Riwayat Tambah Barang</a></li>
-                <li><a href="riwayatkurangbarang.php">Riwayat Keluar Barang</a></li>
-            </ul>
-        </main>
-    </header>
+<?php if (!$barang): ?>
+    <section class="card">
+        <div class="empty">
+            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+            <b>Belum ada barang untuk dikeluarkan</b>
+            Daftarkan barang terlebih dahulu di menu <a href="masuk.php">Input Barang Baru</a>.
+        </div>
+    </section>
+<?php else: ?>
+<div class="grid-2">
+    <section class="card" aria-labelledby="h-form">
+        <div class="card-head">
+            <h2 id="h-form">Form Pengeluaran</h2>
+            <span class="sub">Stok akan berkurang otomatis setelah disimpan</span>
+        </div>
 
-    <main>
-        <!-- Tempat untuk menampilkan pesan status -->
-        <div id="statusMessage"></div>
+        <form id="formKeluar" class="card-body" action="formoutputbarang.php" method="post" novalidate>
+            <input type="hidden" name="nomor" id="nomor">
 
-        <form action="formoutputbarang.php" method="post" class="form-container" id="formBarangKeluar">
-            <?php
-            require "konek.php";
+            <div class="form-grid">
+                <div class="field full" data-field="kdbarang">
+                    <label for="kdbarang" class="req">Pilih Barang</label>
+                    <select class="select" name="kdbarang" id="kdbarang" required>
+                        <option value="">Pilih kode barang…</option>
+                        <?php foreach ($barang as $b): ?>
+                            <option value="<?= e($b['kdbarang']) ?>"
+                                    data-nomor="<?= e($b['nomor']) ?>"
+                                    data-nama="<?= e($b['namabarang']) ?>"
+                                    data-stok="<?= e($b['jumlah']) ?>"
+                                    data-satuan="<?= e(split_satuan($b['satuan'])[1]) ?>"
+                                    data-harga="<?= e($b['harga']) ?>"
+                                    <?= (int) $b['jumlah'] <= 0 ? 'disabled' : '' ?>>
+                                <?= e($b['kdbarang']) ?> — <?= e($b['namabarang']) ?> (stok <?= angka($b['jumlah']) ?><?= (int) $b['jumlah'] <= 0 ? ', habis' : '' ?>)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <span class="err">Pilih barang terlebih dahulu.</span>
+                </div>
 
-            $query = mysqli_query($conn, "SELECT nomor, kdbarang, namabarang, satuan, harga FROM input");
-            $barang = [];
-            while ($row = mysqli_fetch_assoc($query)) {
-                $barang[$row['kdbarang']] = $row;
-            }
-            mysqli_close($conn);
-            ?>
+                <div class="field" data-field="nmbarang">
+                    <label for="nmbarang">Nama Barang</label>
+                    <input class="input" type="text" name="nmbarang" id="nmbarang" readonly tabindex="-1" placeholder="Otomatis">
+                </div>
 
-            <div class="form-group">
-                <label for="kdbarang">Kode Barang</label>
-                <select name="kdbarang" id="kdbarang" class="form-control" required onchange="updateBarangInfo()">
-                    <option value="">-- Pilih Kode Barang --</option>
-                    <?php foreach ($barang as $kode => $data): ?>
-                        <option value="<?= htmlspecialchars($kode) ?>">
-                            <?= htmlspecialchars($kode) ?> - <?= htmlspecialchars($data['namabarang']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+                <div class="field" data-field="pengeluaran">
+                    <label for="pengeluaran" class="req">Keluar Ke</label>
+                    <input class="input" type="text" name="pengeluaran" id="pengeluaran" required placeholder="Nama penerima / tujuan">
+                    <span class="err">Kolom ini wajib diisi.</span>
+                </div>
 
-            <div class="form-group">
-                <label for="nomor">Nomor</label>
-                <input type="number" name="nomor" id="nomor" class="form-control" readonly>
-            </div>
+                <div class="field" data-field="jumlah">
+                    <label for="jumlah" class="req">Jumlah Keluar</label>
+                    <input class="input" type="number" name="jumlah" id="jumlah" min="1" step="1" inputmode="numeric" required placeholder="0">
+                    <span class="err" id="errJumlah">Jumlah minimal 1.</span>
+                </div>
 
-            <div class="form-group">
-                <label for="nmbarang">Nama Barang</label>
-                <input type="text" name="nmbarang" id="nmbarang" class="form-control" readonly>
-            </div>
+                <div class="field" data-field="harga">
+                    <label for="harga">Harga Satuan</label>
+                    <div class="input-money">
+                        <span>Rp</span>
+                        <input class="input" type="text" id="harga" readonly tabindex="-1" placeholder="0">
+                    </div>
+                </div>
 
-            <div class="form-group">
-                <label for="pengeluaran">Keluar Ke</label>
-                <input type="text" name="pengeluaran" id="pengeluaran" class="form-control" required>
-            </div>
+                <div class="field" data-field="tanggal">
+                    <label for="tanggal" class="req">Tanggal</label>
+                    <input class="input" type="date" name="tanggal" id="tanggal" value="<?= e(date('Y-m-d')) ?>" data-today="<?= e(date('Y-m-d')) ?>" required>
+                    <span class="err">Tanggal wajib diisi.</span>
+                </div>
 
-            <div class="form-group">
-                <label for="satuan">Satuan</label>
-                <input type="text" name="satuan" id="satuan" class="form-control" readonly>
-            </div>
-
-            <div class="form-group">
-                <label for="jumlah">Jumlah</label>
-                <input type="number" name="jumlah" id="jumlah" class="form-control" min="1" required>
-            </div>
-
-            <div class="form-group">
-                <label for="harga">Harga</label>
-                <input type="number" name="harga" id="harga" class="form-control" readonly>
-            </div>
-
-            <div class="form-group">
-                <label for="totalharga">Total Harga</label>
-                <input type="number" name="totalharga" id="totalharga" class="form-control" readonly>
-            </div>
-
-            <div class="form-group full-width">
-                <label for="tanggal">Tanggal</label>
-                <input type="date" name="tanggal" id="tanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
-            </div>
-
-            <div class="form-group full-width">
-                <label for="ket">Keterangan</label>
-                <textarea name="ket" id="ket" rows="3" class="form-control" required></textarea>
-            </div>
-
-            <div class="form-group full-width">
-                <button type="submit" class="btn-submit">Kirim</button>
-            </div>
-        </form>
-
-        <script>
-            const klik = document.getElementById('klik');
-            klik.onclick = function() {
-                document.querySelector('.link').classList.toggle('open');
-            }
-
-            const barangData = <?= json_encode($barang) ?>;
-
-            function updateBarangInfo() {
-                const kodeBarang = document.getElementById('kdbarang').value;
-                if (kodeBarang && barangData[kodeBarang]) {
-                    const barang = barangData[kodeBarang];
-                    document.getElementById('nomor').value = barang.nomor || '';
-                    document.getElementById('nmbarang').value = barang.namabarang;
-
-                    // Simpan data satuan asli untuk perhitungan
-                    const satuanAsli = barang.satuan;
-                    const satuanNumerik = parseInt(satuanAsli) || 0;
-                    const satuanText = satuanAsli.replace(satuanNumerik, '').trim() || 'set';
-
-                    // Simpan data awal di atribut data-*
-                    document.getElementById('satuan').dataset.original = satuanNumerik;
-                    document.getElementById('satuan').dataset.satuanText = satuanText;
-                    document.getElementById('satuan').dataset.originalTotalHarga = barang.totalharga || 0;
-
-                    // Tampilkan satuan asli
-                    document.getElementById('satuan').value = satuanNumerik + ' ' + satuanText;
-
-                    document.getElementById('harga').value = barang.harga;
-                    document.getElementById('totalharga').value = '';
-                    document.getElementById('sisa_totalharga').value = barang.totalharga || 0;
-                } else {
-                    document.getElementById('nomor').value = '';
-                    document.getElementById('nmbarang').value = '';
-                    document.getElementById('satuan').value = '';
-                    document.getElementById('satuan').removeAttribute('data-original');
-                    document.getElementById('satuan').removeAttribute('data-satuan-text');
-                    document.getElementById('harga').value = '';
-                    document.getElementById('totalharga').value = '';
-                }
-            }
-
-            function calculateTotalHarga() {
-                const jumlah = parseInt(document.getElementById('jumlah').value) || 0;
-                const harga = parseInt(document.getElementById('harga').value) || 0;
-                const totalharga = jumlah * harga;
-                document.getElementById('totalharga').value = totalharga;
-
-                // Hitung sisa stok dan total harga
-                const satuanEl = document.getElementById('satuan');
-                const original = parseInt(satuanEl.dataset.original) || 0;
-                const satuanText = satuanEl.dataset.satuanText || 'set';
-                const originalTotalHarga = parseFloat(satuanEl.dataset.originalTotalHarga) || 0;
-
-                if (original && jumlah) {
-                    const sisa = original - jumlah;
-                    satuanEl.value = sisa + ' ' + satuanText;
-
-                    // Hitung sisa total harga
-                    const sisaTotalHarga = originalTotalHarga - totalharga;
-                    document.getElementById('sisa_totalharga').value = sisaTotalHarga > 0 ? sisaTotalHarga : 0;
-                }
-            }
-
-            // Event listener untuk perubahan jumlah
-            document.getElementById('jumlah').addEventListener('input', calculateTotalHarga);
-
-            // Fungsi untuk menampilkan pesan status
-            function showStatusMessage(type, title, message, details = '') {
-                const statusMessage = document.getElementById('statusMessage');
-                const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
-
-                statusMessage.innerHTML = `
-            <div class="status-message ${type}">
-                <i class="fas ${icon}"></i>
-                <div>
-                    <h3>${title}</h3>
-                    <p>${message}</p>
-                    ${details ? `<p>${details}</p>` : ''}
+                <div class="field full" data-field="ket">
+                    <label for="ket" class="req">Keterangan</label>
+                    <textarea class="textarea" name="ket" id="ket" rows="3" required placeholder="Contoh: pengiriman ke proyek A"></textarea>
+                    <span class="err">Keterangan wajib diisi.</span>
                 </div>
             </div>
-        `;
 
-                statusMessage.scrollIntoView({
-                    behavior: 'smooth'
-                });
+            <div class="form-actions">
+                <button type="reset" class="btn btn-outline" id="btnReset"><i class="fa-solid fa-rotate-left"></i> Kosongkan</button>
+                <button type="submit" class="btn" id="btnSubmit"><i class="fa-solid fa-paper-plane"></i> Simpan Pengeluaran</button>
+            </div>
+        </form>
+    </section>
+
+    <aside class="summary" aria-label="Ringkasan">
+        <section class="summary-box" aria-live="polite">
+            <div class="summary-row"><span>Stok tersedia</span><b id="sumTersedia">–</b></div>
+            <div class="summary-row"><span>Akan dikeluarkan</span><b id="sumKeluar">–</b></div>
+            <div class="summary-row total"><span>Sisa stok</span><b id="sumSisa">–</b></div>
+            <div class="summary-row"><span>Nilai pengeluaran</span><b id="sumNilai">Rp 0</b></div>
+        </section>
+        <div class="notice info" id="infoPilih">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <span>Pilih barang untuk melihat stok yang tersedia.</span>
+        </div>
+        <div class="notice danger hidden" id="infoKurang" role="alert">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+            <span>Jumlah melebihi stok yang tersedia.</span>
+        </div>
+    </aside>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('formKeluar');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const $ = (id) => document.getElementById(id);
+
+    function selected() {
+        const opt = $('kdbarang').selectedOptions[0];
+        return opt && opt.value ? opt.dataset : null;
+    }
+
+    function refresh() {
+        const d = selected();
+        const jumlah = parseInt($('jumlah').value, 10) || 0;
+        if (!d) {
+            $('nomor').value = '';
+            $('nmbarang').value = '';
+            $('harga').value = '';
+            ['sumTersedia', 'sumKeluar', 'sumSisa'].forEach((id) => $(id).textContent = '–');
+            $('sumNilai').textContent = rp(0);
+            $('infoPilih').classList.remove('hidden');
+            $('infoKurang').classList.add('hidden');
+            return;
+        }
+        const stok = parseInt(d.stok, 10) || 0;
+        const harga = parseFloat(d.harga) || 0;
+        const satuan = d.satuan || '';
+        const kurang = jumlah > stok;
+
+        $('nomor').value = d.nomor;
+        $('nmbarang').value = d.nama;
+        $('harga').value = idn(harga);
+        $('sumTersedia').textContent = `${idn(stok)} ${satuan}`.trim();
+        $('sumKeluar').textContent = jumlah ? `− ${idn(jumlah)} ${satuan}`.trim() : '–';
+        $('sumSisa').textContent = jumlah ? `${idn(Math.max(0, stok - jumlah))} ${satuan}`.trim() : `${idn(stok)} ${satuan}`.trim();
+        $('sumNilai').textContent = rp(jumlah * harga);
+        $('infoPilih').classList.add('hidden');
+        $('infoKurang').classList.toggle('hidden', !kurang);
+        $('jumlah').max = stok;
+        $('errJumlah').textContent = kurang ? `Stok hanya ${idn(stok)} ${satuan}.` : 'Jumlah minimal 1.';
+        $('jumlah').closest('.field').classList.toggle('invalid', kurang);
+        btnSubmit.disabled = kurang;
+    }
+
+    form.addEventListener('input', refresh);
+    form.addEventListener('change', refresh);
+    refresh();
+
+    // Validasi per field. Field kosong baru ditandai saat submit (tidak mengganggu saat pengguna masih mengisi).
+    function fieldOk(el) {
+        const kosong = (el.tagName === 'TEXTAREA' || el.type === 'text') && el.value.trim() === '';
+        return el.checkValidity() && !kosong;
+    }
+    function validateField(el) {
+        const f = el.closest('.field');
+        const ok = fieldOk(el);
+        if (f) f.classList.toggle('invalid', !ok);
+        return ok;
+    }
+    function validate() {
+        let ok = true, first = null;
+        form.querySelectorAll('[required]').forEach((el) => {
+            if (!validateField(el)) { ok = false; first = first || el; }
+        });
+        const d = selected();
+        if (d && (parseInt($('jumlah').value, 10) || 0) > (parseInt(d.stok, 10) || 0)) { ok = false; }
+        if (first) first.focus();
+        return ok;
+    }
+    // Tandai saat pengguna meninggalkan field yang sudah berisi nilai tidak valid
+    form.addEventListener('focusout', (e) => {
+        if (e.target.hasAttribute && e.target.hasAttribute('required') && e.target.value !== '') validateField(e.target);
+    });
+    // Hilangkan tanda error begitu nilainya sudah benar
+    form.addEventListener('input', (e) => {
+        if (e.target.closest && e.target.closest('.field.invalid') && fieldOk(e.target)) {
+            e.target.closest('.field').classList.remove('invalid');
+        }
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!validate()) {
+            toast('warning', 'Periksa kembali kolom yang bertanda merah.');
+            return;
+        }
+        setLoading(btnSubmit, true);
+        try {
+            const res = await fetch('formoutputbarang.php', { method: 'POST', body: new FormData(form) });
+            const data = await res.json();
+            if (data.status === 'success') {
+                window.location.href = 'output.php';
+                return;
             }
+            toast('error', data.message || 'Gagal menyimpan pengeluaran.');
+        } catch (err) {
+            toast('error', 'Tidak dapat terhubung ke server. Periksa koneksi Anda.');
+        } finally {
+            setLoading(btnSubmit, false);
+        }
+    });
 
-            document.getElementById('formBarangKeluar').addEventListener('submit', function(e) {
-                e.preventDefault();
+    $('btnReset').addEventListener('click', () => {
+        setTimeout(() => {
+            form.querySelectorAll('.field').forEach((f) => f.classList.remove('invalid'));
+            $('tanggal').value = $('tanggal').dataset.today;
+            refresh();
+        }, 0);
+    });
+});
+</script>
+<?php endif; ?>
 
-                const formData = new FormData(this);
-                const jumlah = parseInt(document.getElementById('jumlah').value) || 0;
-                const nomor = document.getElementById('nomor').value;
-
-                if (jumlah <= 0) {
-                    showStatusMessage('error', 'Error!', 'Jumlah harus lebih dari 0');
-                    return;
-                }
-
-                // Tambahkan nomor ke FormData
-                formData.append('nomor', nomor);
-
-                fetch('formoutputbarang.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.status === 'success') {
-                            showStatusMessage(
-                                'success',
-                                'Berhasil!',
-                                data.message,
-                                `Sisa stok: ${data.sisa_stok}${data.satuan}`
-                            );
-                            this.reset();
-                            updateBarangInfo();
-                        } else {
-                            showStatusMessage('error', 'Error!', data.message);
-                        }
-                    })
-                    .catch(error => {
-                        showStatusMessage('error', 'Error!', 'Terjadi kesalahan: ' + error.message);
-                    });
-            });
-
-            // Inisialisasi awal
-            document.addEventListener('DOMContentLoaded', function() {
-                updateBarangInfo();
-            });
-        </script>
-    </main>
-</body>
-
-</html>
+<?php render_foot(); ?>

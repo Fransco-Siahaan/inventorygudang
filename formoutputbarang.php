@@ -1,127 +1,92 @@
 <?php
-require "konek.php";
+// Endpoint: mencatat pengeluaran barang.
+// Stok dicek di server (bukan hanya di browser), harga diambil dari database, dan semuanya dalam satu transaksi.
+require_once __DIR__ . '/inc/bootstrap.php';
 
-header('Content-Type: application/json');
-
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // Validasi input
-    $nomor = isset($_POST["nomor"]) ? trim($_POST['nomor']) : null;
-    $idbarang = isset($_POST["kdbarang"]) ? trim($_POST['kdbarang']) : null;
-    $jlhbarang = isset($_POST['jumlah']) ? (int)$_POST['jumlah'] : 0;
-    $harga = isset($_POST['harga']) ? (int)$_POST['harga'] : 0;
-
-    if (empty($nomor) || empty($idbarang) || $jlhbarang <= 0 || $harga <= 0) {
-        echo json_encode(['status' => 'error', 'message' => 'Semua field harus diisi dengan benar']);
-        exit;
-    }
-
-    // Hitung total harga
-    $totalharga = $jlhbarang * $harga;
-
-    mysqli_begin_transaction($conn);
-
-    try {
-        // 1. Verifikasi kombinasi nomor dan kdbarang ada di tabel input
-        $check = "SELECT jumlah, satuan, totalharga FROM input WHERE nomor = ? AND kdbarang = ? FOR UPDATE";
-        $stmt = mysqli_prepare($conn, $check);
-        mysqli_stmt_bind_param($stmt, "ss", $nomor, $idbarang);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-
-        if (mysqli_num_rows($result) == 0) {
-            throw new Exception("Kombinasi nomor dan kode barang tidak valid");
-        }
-
-        $barang = mysqli_fetch_assoc($result);
-        $stok_sekarang = $barang['jumlah'];
-        $totalharga_sekarang = $barang['totalharga'];
-
-        // Ekstrak angka dari satuan
-        $satuan_numerik = (int)$barang['satuan'];
-        $satuan_text = trim(str_replace($satuan_numerik, '', $barang['satuan'])) ?: ' set';
-
-        // 2. Validasi stok cukup
-        if ($stok_sekarang < $jlhbarang) {
-            throw new Exception("Stok tidak mencukupi. Stok tersedia: $stok_sekarang$satuan_text");
-        }
-
-        // 3. Hitung satuan baru dan total harga baru
-        $satuan_baru = $stok_sekarang - $jlhbarang;
-        $totalharga_baru = $totalharga_sekarang - $totalharga;
-        $totalharga_baru = max(0, $totalharga_baru); // Pastikan tidak negatif
-
-        // 4. Update stok di tabel input
-        $update = "UPDATE input SET 
-                  jumlah = ?, 
-                  satuan = CONCAT(?, ?), 
-                  totalharga = ?
-                  WHERE nomor = ? AND kdbarang = ?";
-        $stmt = mysqli_prepare($conn, $update);
-        mysqli_stmt_bind_param($stmt, "ississ", 
-            $satuan_baru, 
-            $satuan_baru, 
-            $satuan_text, 
-            $totalharga_baru,
-            $nomor,
-            $idbarang
-        );
-
-        if (!mysqli_stmt_execute($stmt)) {
-            throw new Exception("Gagal update stok: " . mysqli_error($conn));
-        }
-
-        // 5. Simpan ke tabel keluar
-        $insert = "INSERT INTO keluar (
-            nomor,
-            kdbarang, 
-            nmbarang, 
-            pengeluaran, 
-            satuan, 
-            jumlah, 
-            harga, 
-            totalharga,
-            tanggal, 
-            ket
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-        $satuan_keluar = $jlhbarang . $satuan_text;
-
-        $stmt = mysqli_prepare($conn, $insert);
-        mysqli_stmt_bind_param(
-            $stmt,
-            "sssssiisss",
-            $nomor,
-            $idbarang,
-            $_POST['nmbarang'],
-            $_POST['pengeluaran'],
-            $satuan_keluar,
-            $jlhbarang,
-            $harga,
-            $totalharga,
-            $_POST['tanggal'],
-            $_POST['ket']
-        );
-
-        if (!mysqli_stmt_execute($stmt)) {
-            throw new Exception("Gagal mencatat pengeluaran: " . mysqli_error($conn));
-        }
-
-        mysqli_commit($conn);
-
-        echo json_encode([
-            'status' => 'success',
-            'message' => 'Data pengeluaran berhasil disimpan',
-            'sisa_stok' => $satuan_baru,
-            'satuan' => $satuan_text,
-            'sisa_totalharga' => $totalharga_baru
-        ]);
-    } catch (Exception $e) {
-        mysqli_rollback($conn);
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-    }
-} else {
-    echo json_encode(['status' => 'error', 'message' => 'Metode request tidak valid']);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    json_out(['status' => 'error', 'message' => 'Metode request tidak valid'], 405);
 }
 
-mysqli_close($conn);
-?>
+$nomor       = filter_var($_POST['nomor'] ?? null, FILTER_VALIDATE_INT);
+$kdbarang    = trim($_POST['kdbarang'] ?? '');
+$pengeluaran = trim($_POST['pengeluaran'] ?? '');
+$jumlah      = filter_var($_POST['jumlah'] ?? null, FILTER_VALIDATE_INT);
+$tanggal     = $_POST['tanggal'] ?? '';
+$ket         = trim($_POST['ket'] ?? '');
+
+if ($nomor === false || $nomor <= 0 || $kdbarang === '') {
+    json_out(['status' => 'error', 'message' => 'Pilih barang terlebih dahulu'], 422);
+}
+if ($pengeluaran === '') {
+    json_out(['status' => 'error', 'message' => 'Kolom "Keluar ke" wajib diisi'], 422);
+}
+if ($jumlah === false || $jumlah <= 0) {
+    json_out(['status' => 'error', 'message' => 'Jumlah harus lebih dari 0'], 422);
+}
+if (!valid_date($tanggal)) {
+    json_out(['status' => 'error', 'message' => 'Tanggal tidak valid'], 422);
+}
+
+try {
+    mysqli_begin_transaction($conn);
+
+    // Kunci baris agar stok tidak bisa terkurangi dua kali secara bersamaan
+    $barang = db_one(
+        $conn,
+        'SELECT nomor, namabarang, jumlah, satuan, harga, totalharga
+         FROM input WHERE nomor = ? AND kdbarang = ? FOR UPDATE',
+        'is',
+        [$nomor, $kdbarang]
+    );
+    if (!$barang) {
+        throw new RuntimeException('Kombinasi nomor dan kode barang tidak valid');
+    }
+
+    [, $unit] = split_satuan($barang['satuan']);
+    $unit = $unit !== '' ? $unit : 'set';
+
+    $stokSekarang = (int) $barang['jumlah'];
+    if ($stokSekarang < $jumlah) {
+        throw new RuntimeException("Stok tidak mencukupi. Stok tersedia: {$stokSekarang} {$unit}");
+    }
+
+    $harga      = (float) $barang['harga'];
+    $totalKeluar = $jumlah * $harga;
+    $stokBaru   = $stokSekarang - $jumlah;
+    $totalBaru  = max(0.0, (float) $barang['totalharga'] - $totalKeluar);
+
+    db_exec(
+        $conn,
+        'UPDATE input SET jumlah = ?, satuan = ?, totalharga = ? WHERE nomor = ? AND kdbarang = ?',
+        'isdis',
+        [$stokBaru, $stokBaru . ' ' . $unit, $totalBaru, $nomor, $kdbarang]
+    );
+
+    db_exec(
+        $conn,
+        'INSERT INTO keluar (nomor, kdbarang, nmbarang, pengeluaran, satuan, jumlah, harga, totalharga, tanggal, ket)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'issssiddss',
+        [
+            $nomor, $kdbarang, $barang['namabarang'], $pengeluaran,
+            $jumlah . ' ' . $unit, $jumlah, $harga, $totalKeluar, $tanggal, $ket,
+        ]
+    );
+
+    mysqli_commit($conn);
+
+    flash('success', "Pengeluaran {$kdbarang} sebanyak {$jumlah} {$unit} berhasil dicatat. Sisa stok {$stokBaru} {$unit}.");
+    json_out([
+        'status'    => 'success',
+        'message'   => 'Data pengeluaran berhasil disimpan',
+        'sisa_stok' => $stokBaru,
+        'satuan'    => $unit,
+    ]);
+} catch (RuntimeException $e) {
+    mysqli_rollback($conn);
+    json_out(['status' => 'error', 'message' => $e->getMessage()], 422);
+} catch (Throwable $e) {
+    mysqli_rollback($conn);
+    error_log('[formoutputbarang] ' . $e->getMessage());
+    json_out(['status' => 'error', 'message' => 'Terjadi kesalahan pada server'], 500);
+}

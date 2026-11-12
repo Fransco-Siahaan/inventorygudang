@@ -1,39 +1,22 @@
 <?php
-require "konek.php";
-session_start();
+// Endpoint: menghapus satu baris riwayat pengeluaran (tabel keluar) berdasarkan id.
+require_once __DIR__ . '/inc/bootstrap.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['nomor'])) {
-    $nomor = mysqli_real_escape_string($conn, $_POST['nomor']);
-    
-    try {
-        // Dapatkan info barang
-        $query_info = "SELECT nomor, kdbarang, nmbarang FROM keluar WHERE nomor = '$nomor'";
-        $result_info = mysqli_query($conn, $query_info);
-        
-        if (!$result_info) {
-            throw new Exception("Error query: " . mysqli_error($conn));
-        }
-        
-        if (mysqli_num_rows($result_info) > 0) {
-            $barang_info = mysqli_fetch_assoc($result_info);
-            
-            // Hapus data
-            $delete_query = "DELETE FROM keluar WHERE nomor = '$nomor'";
-            if (mysqli_query($conn, $delete_query)) {
-                $_SESSION['message'] = "Data " . $barang_info['kdbarang'] . " - " . $barang_info['nmbarang'] . " berhasil dihapus";
-            } else {
-                throw new Exception("Gagal hapus: " . mysqli_error($conn));
-            }
-        } else {
-            throw new Exception("Data tidak ditemukan");
-        }
-    } catch (Exception $e) {
-        $_SESSION['error'] = $e->getMessage();
-    }
-} else {
-    $_SESSION['error'] = "Invalid request";
+$redirect = $_POST['redirect'] ?? null;
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id'])) {
+    flash('error', 'Permintaan tidak valid.');
+    redirect_local($redirect, 'riwayatkurangbarang.php');
 }
 
-header("Location: " . $_SERVER['HTTP_REFERER']);
-exit();
-?>
+$id = filter_var($_POST['id'], FILTER_VALIDATE_INT);
+$row = $id ? db_one($conn, 'SELECT kdbarang, nmbarang FROM keluar WHERE id = ?', 'i', [$id]) : null;
+
+if (!$row) {
+    flash('error', 'Data riwayat tidak ditemukan.');
+} else {
+    db_exec($conn, 'DELETE FROM keluar WHERE id = ?', 'i', [$id]);
+    flash('success', "Riwayat keluar {$row['kdbarang']} – {$row['nmbarang']} berhasil dihapus.");
+}
+
+redirect_local($redirect, 'riwayatkurangbarang.php');

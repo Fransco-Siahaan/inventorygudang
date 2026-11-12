@@ -1,0 +1,7 @@
+vendor/
+_arsip/
+db/
+*.log
+delete_log.txt
+.text
+.env

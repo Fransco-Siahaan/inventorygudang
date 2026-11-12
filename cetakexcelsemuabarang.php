@@ -15,8 +15,10 @@ function clean_input($data)
 }
 
 // Ambil parameter pencarian dan kode barang spesifik
-$keyword = isset($_POST['search_term']) ? clean_input($_POST['search_term']) : '';
-$kdbarang_spesifik = isset($_POST['kdbarang_spesifik']) ? clean_input($_POST['kdbarang_spesifik']) : '';
+$keyword = trim($_POST['search_term'] ?? '');
+$keyword = mysqli_real_escape_string($conn, $keyword);
+$kdbarang_spesifik = trim($_POST['kdbarang_spesifik'] ?? '');
+$kdbarang_spesifik = mysqli_real_escape_string($conn, $kdbarang_spesifik);
 
 // Set header untuk file Excel
 if (!empty($kdbarang_spesifik)) {

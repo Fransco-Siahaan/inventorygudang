@@ -1,269 +1,109 @@
 <?php
-require "konek.php";
-session_start();
+require_once __DIR__ . '/inc/bootstrap.php';
+require_once __DIR__ . '/inc/layout.php';
 
-// Set timezone ke Indonesia (WIB)
-date_default_timezone_set('Asia/Jakarta');
+$q     = trim($_GET['q'] ?? '');
+$where = search_where(COLS_KELUAR, $q);
+$total = (int) db_scalar($conn, 'SELECT COUNT(*) FROM keluar' . $where['sql'], $where['types'], $where['params']);
+$pg    = paginate($total, PER_PAGE_LIST, page_param());
+$rows  = db_fetch_all(
+    $conn,
+    'SELECT * FROM keluar' . $where['sql'] . ' ORDER BY tanggal DESC, id DESC LIMIT ? OFFSET ?',
+    $where['types'] . 'ii',
+    array_merge($where['params'], [$pg['per'], $pg['offset']])
+);
 
-// Error reporting untuk development
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+$extra   = $q !== '' ? ['q' => $q] : [];
+$kembali = basename(__FILE__) . '?' . http_build_query(array_merge($extra, ['page' => $pg['page']]));
 
-// Fungsi untuk membersihkan dan mengamankan input
-function clean_input($data) {
-    return htmlspecialchars(stripslashes(trim($data)));
-}
-
-// Cari data yang disimpan
-$saved_search = isset($_SESSION['saved_search']) ? clean_input($_SESSION['saved_search']) : '';
-$keyword = isset($_POST['cari']) ? clean_input($_POST['cari']) : $saved_search;
-
-// Query dengan prepared statement untuk mencegah SQL injection
-$base_query = "SELECT * FROM keluar";
-$where_clause = '';
-$params = [];
-$types = '';
-
-if (!empty($keyword)) {
-    $where_clause = " WHERE 
-        kdbarang LIKE ? OR 
-        nmbarang LIKE ? OR 
-        pengeluaran LIKE ? OR 
-        tanggal LIKE ? OR 
-        satuan LIKE ? OR 
-        jumlah LIKE ? OR 
-        harga LIKE ? OR 
-        totalharga LIKE ? OR 
-        ket LIKE ?";
-    
-    $search_term = "%$keyword%";
-    $types = str_repeat('s', 9); // 9 parameter string
-    $params = array_fill(0, 9, $search_term);
-}
-
-// Eksekusi query
-$stmt = $conn->prepare($base_query . $where_clause);
-if (!empty($params)) {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$result = $stmt->get_result();
-$total_data = $result->num_rows;
-
-// Simpan pencarian ke session jika ada keyword baru
-if (isset($_POST['cari']) && !empty($_POST['cari'])) {
-    $_SESSION['saved_search'] = $keyword;
-}
+render_head('Riwayat Keluar Barang', 'riwayat_keluar', 'Semua pengeluaran barang yang pernah dicatat');
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Riwayat Barang Keluar</title>
-    <link rel="stylesheet" href="imbarang.css">
-    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
-    <style>
-        /* Gaya tambahan */
-        .notification {
-            padding: 10px 15px;
-            margin-bottom: 15px;
-            border-radius: 4px;
-            color: white;
-        }
-        .error { background-color: #e74c3c; }
-        .success { background-color: #2ecc71; }
-        .print-buttons {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .print-buttons button {
-            padding: 8px 15px;
-            border: none;
-            border-radius: 4px;
-            color: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .print-buttons button i {
-            font-size: 1.1em;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border: 1px solid #ddd;
-        }
-        th {
-            background-color: #00ccbb;
-            font-weight: bold;
-        }
-        .delete-btn {
-            background-color: #e74c3c;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 3px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .delete-btn:hover {
-            background-color: #c0392b;
-        }
-        .no-data {
-            text-align: center;
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1 class="hero">Informasi Data Pengeluaran Barang</h1>
-        
-        <?php if (isset($_SESSION['error'])): ?>
-            <div class="notification error">
-                <?= htmlspecialchars($_SESSION['error']) ?>
-                <?php unset($_SESSION['error']); ?>
-            </div>
-        <?php endif; ?>
+<section class="card">
+    <div class="toolbar">
+        <form class="search" method="get" action="" role="search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input class="input" type="search" name="q" value="<?= e($q) ?>"
+                   placeholder="Cari kode, nama, penerima, tanggal…" aria-label="Cari riwayat keluar">
+        </form>
 
-        <?php if (isset($_SESSION['message'])): ?>
-            <div class="notification success">
-                <?= htmlspecialchars($_SESSION['message']) ?>
-                <?php unset($_SESSION['message']); ?>
-            </div>
-        <?php endif; ?>
-
-        <div class="box">
-            <ul class="link">
-                <li><a href="masuk.php">Input Data Barang</a></li>
-                <li><a href="nambahbarang.php">Tambah Barang</a></li>
-                <li><a href="output.php">Pengurangan Barang</a></li>
-                <li><a href="inbarang.php">Riwayat Penambahan Barang</a></li>
-                <li><a href="informasimasukbarang.php">Riwayat Masuk Barang</a></li>
-            </ul>
-            
-            <div class="pencarian">
-                <form action="" method="post" id="searchForm">
-                    <input type="text" name="cari" value="<?= htmlspecialchars($keyword) ?>" 
-                           placeholder="Cari data..." aria-label="Cari data">
-                    <button type="submit" class="btn" aria-label="Tombol cari" hidden>
-                        <i class='bx bx-search'></i>
-                    </button>
-                </form>
-            </div>
-            
-            <div class="print-buttons">
-                <form action="cetakpdfout.php" method="post">
-                    <input type="hidden" name="search_term" value="<?= htmlspecialchars($keyword) ?>">
-                    <button type="submit" style="background-color: #e74c3c;">
-                        <i class='bx bx-printer'></i> Print PDF
-                    </button>
-                </form>
-                <form action="cetakexcelout.php" method="post">
-                    <input type="hidden" name="search_term" value="<?= htmlspecialchars($keyword) ?>">
-                    <button type="submit" style="background-color: #27ae60;">
-                        <i class='bx bx-table'></i> Export Excel
-                    </button>
-                </form>
-                <form action="save.php" method="post" id="saveForm">
-                    <input type="hidden" name="search_term" value="<?= htmlspecialchars($keyword) ?>">
-                    <button type="submit" style="background-color: #3498db;">
-                        <i class='bx bx-save'></i> Simpan Pencarian
-                    </button>
-                </form>
-            </div>
-
-            <div class="tabel">
-                <main class="middle">
-                    <?php if ($total_data > 0): ?>
-                        <table class="infromasi">
-                            <thead>
-                                <tr>
-                                    <th>No</th>
-                                    <th>Nomor</th>
-                                    <th>Kode Barang</th>
-                                    <th>Nama Barang</th>
-                                    <th>Penerima</th>
-                                    <th>Tanggal</th>
-                                    <th>Satuan</th>
-                                    <th>Jumlah</th>
-                                    <th>Harga (Rp)</th>
-                                    <th>Total (Rp)</th>
-                                    <th>Keterangan</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php $counter = 1; ?>
-                                <?php while ($row = $result->fetch_assoc()): ?>
-                                    <tr>
-                                        <td><?= $counter++ ?></td>
-                                        <td><?= htmlspecialchars($row['nomor']) ?></td>
-                                        <td><?= htmlspecialchars($row['kdbarang']) ?></td>
-                                        <td><?= htmlspecialchars($row['nmbarang']) ?></td>
-                                        <td><?= htmlspecialchars($row['pengeluaran']) ?></td>
-                                        <td><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
-                                        <td><?= htmlspecialchars($row['satuan']) ?></td>
-                                        <td><?= number_format($row['jumlah'], 0, ',', '.') ?></td>
-                                        <td><?= number_format($row['harga'], 0, ',', '.') ?></td>
-                                        <td><?= number_format($row['totalharga'], 0, ',', '.') ?></td>
-                                        <td><?= htmlspecialchars($row['ket']) ?></td>
-                                        <td>
-                                            <form action="hapusdatakurangbarang.php" method="POST" class="delete-form">
-                                                <input type="hidden" name="nomor" value="<?= htmlspecialchars($row['nomor']) ?>">
-                                                <button type="submit" class="delete-btn" 
-                                                        onclick="return confirm('Yakin ingin menghapus data <?= htmlspecialchars(addslashes($row['nmbarang'])) ?>?')">
-                                                    <i class='bx bx-trash'></i> Hapus
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
-                    <?php else: ?>
-                        <div class="no-data">Tidak ada data ditemukan</div>
-                    <?php endif; ?>
-                </main>
-            </div>
+        <div class="actions-right">
+            <?php if ($q !== ''): ?>
+                <a class="btn btn-outline" href="riwayatkurangbarang.php">Reset</a>
+            <?php endif; ?>
+            <form method="post" action="cetakpdfout.php" target="_blank">
+                <input type="hidden" name="search_term" value="<?= e($q) ?>">
+                <button class="btn btn-danger" type="submit"><i class="fa-solid fa-file-pdf"></i> PDF</button>
+            </form>
+            <form method="post" action="cetakexcelout.php">
+                <input type="hidden" name="search_term" value="<?= e($q) ?>">
+                <button class="btn btn-green" type="submit"><i class="fa-solid fa-file-excel"></i> Excel</button>
+            </form>
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Handle search form submission
-            document.getElementById('searchForm').addEventListener('submit', function() {
-                fetch('save.php', {
-                    method: 'POST',
-                    body: new FormData(document.getElementById('saveForm'))
-                });
-            });
+    <div class="result-info">
+        <?php if ($total > 0): ?>
+            Menampilkan <b><?= angka(($pg['page'] - 1) * $pg['per'] + 1) ?>–<?= angka(min($pg['page'] * $pg['per'], $total)) ?></b>
+            dari <b><?= angka($total) ?></b> transaksi<?= $q !== '' ? ' untuk "' . e($q) . '"' : '' ?>
+        <?php else: ?>
+            Tidak ada hasil<?= $q !== '' ? ' untuk "' . e($q) . '"' : '' ?>
+        <?php endif; ?>
+    </div>
 
-            // Handle save form submission
-            document.getElementById('saveForm').addEventListener('submit', function(e) {
-                e.preventDefault();
-                fetch('save.php', {
-                    method: 'POST',
-                    body: new FormData(this)
-                }).then(response => {
-                    alert('Pencarian berhasil disimpan!');
-                });
-            });
-        });
-    </script>
-</body>
-</html>
+    <?php if (!$rows): ?>
+        <div class="empty">
+            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+            <b>Belum ada riwayat pengeluaran</b>
+            Transaksi <i>Pengeluaran</i> akan tercatat di sini.
+        </div>
+    <?php else: ?>
+        <div class="table-wrap" style="margin-top:12px">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th class="ctr">No</th>
+                        <th>Barang</th>
+                        <th>Keluar ke</th>
+                        <th>Tanggal</th>
+                        <th class="num">Jumlah</th>
+                                                <th class="num">Total</th>
+                        <th class="col-lg">Keterangan</th>
+                        <th class="ctr">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $no = $pg['offset'] + 1; foreach ($rows as $r): ?>
+                        <tr>
+                            <td class="ctr"><?= $no++ ?></td>
+                            <td>
+                                <span class="name"><?= e($r['nmbarang']) ?></span>
+                                <span class="code"><?= e($r['kdbarang']) ?></span>
+                            </td>
+                            <td><?= e($r['pengeluaran']) ?></td>
+                            <td style="white-space:nowrap"><?= e(tgl_indo($r['tanggal'])) ?></td>
+                            <td class="num">
+                                <span class="badge out"><i class="fa-solid fa-arrow-up"></i> <?= e($r['satuan']) ?></span>
+                            </td>
+                                                        <td class="num"><?= rupiah($r['totalharga']) ?></td>
+                            <td class="wrap-text col-lg"><?= e($r['ket']) ?></td>
+                            <td class="ctr">
+                                <form method="post" action="hapusdatakurangbarang.php"
+                                      data-confirm="Hapus riwayat keluar “<?= e($r['nmbarang']) ?>” tanggal <?= e(tgl_indo($r['tanggal'])) ?>? Stok barang tidak dikembalikan otomatis.">
+                                    <input type="hidden" name="id" value="<?= e($r['id']) ?>">
+                                    <input type="hidden" name="redirect" value="<?= e($kembali) ?>">
+                                    <button type="submit" class="btn btn-sm btn-danger" aria-label="Hapus riwayat ini">
+                                        <i class="fa-solid fa-trash-can"></i> Hapus
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?= render_pager($pg, $extra) ?>
+    <?php endif; ?>
+</section>
+
+<?php render_foot(); ?>

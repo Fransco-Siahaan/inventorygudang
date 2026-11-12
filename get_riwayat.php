@@ -1,41 +1,23 @@
 <?php
-require "konek.php";
-header('Content-Type: application/json');
+// Endpoint JSON: riwayat tambah & keluar untuk satu kode barang (dipakai pada modal detail).
+require_once __DIR__ . '/inc/bootstrap.php';
 
-// Ambil parameter dari URL
-$kdbarang = isset($_GET['kdbarang']) ? $_GET['kdbarang'] : '';
-$type = isset($_GET['type']) ? $_GET['type'] : '';
+$kdbarang = trim($_GET['kdbarang'] ?? '');
+$type     = $_GET['type'] ?? '';
 
-// Validasi parameter
-if (empty($kdbarang) || empty($type)) {
-    echo json_encode(['error' => 'Parameter tidak lengkap']);
-    exit;
+if ($kdbarang === '' || !in_array($type, ['tambah', 'keluar'], true)) {
+    json_out(['error' => 'Parameter tidak lengkap'], 400);
 }
 
-// Tentukan tabel berdasarkan type
-$table = ($type === 'tambah') ? 'tambah' : 'keluar';
+// Nama tabel berasal dari whitelist di atas, bukan dari input user langsung
+$table = $type === 'tambah' ? 'tambah' : 'keluar';
 
-// Gunakan prepared statement untuk mencegah SQL injection
-$query = "SELECT * FROM $table WHERE kdbarang = ?";
-$stmt = mysqli_prepare($conn, $query);
+$rows = db_fetch_all(
+    $conn,
+    "SELECT id, nomor, kdbarang, jumlah, satuan, tanggal, ket FROM {$table}
+     WHERE kdbarang = ? ORDER BY tanggal DESC, id DESC",
+    's',
+    [$kdbarang]
+);
 
-if (!$stmt) {
-    echo json_encode(['error' => 'Gagal mempersiapkan statement']);
-    exit;
-}
-
-mysqli_stmt_bind_param($stmt, 's', $kdbarang);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
-
-$data = [];
-while ($row = mysqli_fetch_assoc($result)) {
-    $data[] = $row;
-}
-
-// Tutup statement
-mysqli_stmt_close($stmt);
-
-// Kembalikan data dalam format JSON
-echo json_encode($data);
-?>
+json_out($rows);

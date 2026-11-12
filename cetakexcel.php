@@ -6,7 +6,8 @@ session_start();
 date_default_timezone_set('Asia/Jakarta');
 
 // Get search parameter
-$keyword = isset($_POST['search_term']) ? $_POST['search_term'] : (isset($_SESSION['saved_search']) ? $_SESSION['saved_search'] : '');
+$keyword = isset($_POST['search_term']) ? $_POST['search_term'] : '';
+$keyword = mysqli_real_escape_string($conn, $keyword);
 
 // Set Excel file headers
 header("Content-Type: application/vnd.ms-excel");

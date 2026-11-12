@@ -8,7 +8,8 @@ date_default_timezone_set('Asia/Jakarta'); // WIB
 // date_default_timezone_set('Asia/Jayapura'); // WIT
 
 // Ambil parameter pencarian
-$keyword = isset($_POST['search_term']) ? $_POST['search_term'] : (isset($_SESSION['saved_search']) ? $_SESSION['saved_search'] : '');
+$keyword = isset($_POST['search_term']) ? $_POST['search_term'] : '';
+$keyword = mysqli_real_escape_string($conn, $keyword);
 
 // Set header untuk file Excel
 header("Content-Type: application/vnd.ms-excel");
